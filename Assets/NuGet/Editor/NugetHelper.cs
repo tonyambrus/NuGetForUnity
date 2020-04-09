@@ -1564,6 +1564,18 @@
             if (installedPackages.TryGetValue(package.Id, out installedPackage))
             {
                 isInstalled = package.Version == installedPackage.Version;
+                LogVerbose("Package {0} exists", package.Id);
+            }
+
+            if (isInstalled)
+            {
+                string baseDirectory = Path.Combine(NugetConfigFile.RepositoryPath, string.Format("{0}.{1}", package.Id, package.Version));
+                isInstalled = Directory.Exists(baseDirectory);
+
+                if (!isInstalled)
+                {
+                    LogVerbose("Package {0} exists, target directory {1} doesn't", package.Id, baseDirectory);
+                }
             }
 
             return isInstalled;
