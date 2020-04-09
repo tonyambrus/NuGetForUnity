@@ -38,6 +38,13 @@
                     path = Path.Combine(Path.GetDirectoryName(NugetHelper.NugetConfigFilePath), path);
                 }
 
+                // v3 path not supported, downgrade to 
+                var v3Suffix = "nuget/v3/index.json";
+                if (path.EndsWith(v3Suffix, StringComparison.OrdinalIgnoreCase))
+                {
+                    path = path.Substring(0, path.Length - v3Suffix.Length) + "nuget/v2/";
+                }
+
                 return path;
             }
         }

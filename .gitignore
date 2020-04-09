@@ -74,3 +74,4 @@ Packages.meta
 CreateDLL/bin
 bin
 *.suo
+/CreateDLL/.vs/CreateDLL/v15/Server/sqlite3
