@@ -1463,6 +1463,23 @@
             return objStream;
         }
 
+        public static void RestartUnity()
+        {
+            // save changes
+            UnityEditor.SceneManagement.EditorSceneManager.SaveCurrentModifiedScenesIfUserWantsTo();
+            AssetDatabase.SaveAssets();
+
+            // kill and restart
+            var taskkill = $"taskkill /F /PID {Process.GetCurrentProcess().Id}";
+            Process.Start(new ProcessStartInfo
+            {
+                FileName = "cmd",
+                Arguments = $"/c {taskkill} && {Environment.CommandLine}",
+                CreateNoWindow = true,
+                UseShellExecute = false
+            });
+        }
+
         /// <summary>
         /// Restores all packages defined in packages.config.
         /// </summary>
@@ -1504,6 +1521,15 @@
                 }
 
                 CheckForUnnecessaryPackages();
+            }
+            catch (UnauthorizedAccessException e)
+            {
+                Debug.LogErrorFormat("{0}", e.ToString());
+
+                if (EditorUtility.DisplayDialog("NuGet restore", $"Failed to Restore Packages because a file is locked. Specifically: {e.Message}\n\nRestarting Unity will allow you to restore correctly. Restart Unity now?", "Yes", "No"))
+                {
+                    RestartUnity();
+                }
             }
             catch (Exception e)
             {
