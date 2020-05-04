@@ -353,187 +353,190 @@
         /// <param name="package">The NugetPackage to clean.</param>
         private static void Clean(NugetPackageIdentifier package)
         {
-            string packageInstallDirectory = Path.Combine(NugetConfigFile.RepositoryPath, string.Format("{0}.{1}", package.Id, package.Version));
-
-            LogVerbose("Cleaning {0}", packageInstallDirectory);
-
-            FixSpaces(packageInstallDirectory);
-
-            // delete a remnant .meta file that may exist from packages created by Unity
-            DeleteFile(packageInstallDirectory + "/" + package.Id + ".nuspec.meta");
-
-            // delete directories & files that NuGet normally deletes, but since we are installing "manually" they exist
-            DeleteDirectory(packageInstallDirectory + "/_rels");
-            DeleteDirectory(packageInstallDirectory + "/package");
-            DeleteFile(packageInstallDirectory + "/" + package.Id + ".nuspec");
-            DeleteFile(packageInstallDirectory + "/[Content_Types].xml");
-
-            // Unity has no use for the build directory
-            DeleteDirectory(packageInstallDirectory + "/build");
-
-            // For now, delete src.  We may use it later...
-            DeleteDirectory(packageInstallDirectory + "/src");
-
-            // Since we don't automatically fix up the runtime dll platforms, remove them until we improve support
-            // for this newer feature of nuget packages.
-            DeleteDirectory(Path.Combine(packageInstallDirectory, "runtimes"));
-
-            // Delete documentation folders since they sometimes have HTML docs with JavaScript, which Unity tried to parse as "UnityScript"
-            DeleteDirectory(packageInstallDirectory + "/docs");
-
-            // Delete ref folder, as it is just used for compile-time reference and does not contain implementations.
-            // Leaving it results in "assembly loading" and "multiple pre-compiled assemblies with same name" errors
-            DeleteDirectory(packageInstallDirectory + "/ref");
-
-            if (Directory.Exists(packageInstallDirectory + "/lib"))
+            using (var subst = new Subst(NugetConfigFile.RepositoryPath))
             {
-                List<string> selectedDirectories = new List<string>();
+                string packageInstallDirectory = Path.Combine(subst.MappedRoot, string.Format("{0}.{1}", package.Id, package.Version));
 
-                // go through the library folders in descending order (highest to lowest version)
-                IEnumerable<DirectoryInfo> libDirectories = Directory.GetDirectories(packageInstallDirectory + "/lib").Select(s => new DirectoryInfo(s));
-                var targetFrameworks = libDirectories
-                    .Select(x => x.Name.ToLower());
+                LogVerbose("Cleaning {0}", packageInstallDirectory);
 
-                string bestTargetFramework = TryGetBestTargetFrameworkForCurrentSettings(targetFrameworks);
-                if (bestTargetFramework != null)
+                FixSpaces(packageInstallDirectory);
+
+                // delete a remnant .meta file that may exist from packages created by Unity
+                DeleteFile(packageInstallDirectory + "/" + package.Id + ".nuspec.meta");
+
+                // delete directories & files that NuGet normally deletes, but since we are installing "manually" they exist
+                DeleteDirectory(packageInstallDirectory + "/_rels");
+                DeleteDirectory(packageInstallDirectory + "/package");
+                DeleteFile(packageInstallDirectory + "/" + package.Id + ".nuspec");
+                DeleteFile(packageInstallDirectory + "/[Content_Types].xml");
+
+                // Unity has no use for the build directory
+                DeleteDirectory(packageInstallDirectory + "/build");
+
+                // For now, delete src.  We may use it later...
+                DeleteDirectory(packageInstallDirectory + "/src");
+
+                // Since we don't automatically fix up the runtime dll platforms, remove them until we improve support
+                // for this newer feature of nuget packages.
+                DeleteDirectory(Path.Combine(packageInstallDirectory, "runtimes"));
+
+                // Delete documentation folders since they sometimes have HTML docs with JavaScript, which Unity tried to parse as "UnityScript"
+                DeleteDirectory(packageInstallDirectory + "/docs");
+
+                // Delete ref folder, as it is just used for compile-time reference and does not contain implementations.
+                // Leaving it results in "assembly loading" and "multiple pre-compiled assemblies with same name" errors
+                DeleteDirectory(packageInstallDirectory + "/ref");
+
+                if (Directory.Exists(packageInstallDirectory + "/lib"))
                 {
-                    DirectoryInfo bestLibDirectory = libDirectories
-                        .First(x => x.Name.ToLower() == bestTargetFramework);
+                    List<string> selectedDirectories = new List<string>();
 
-                    if (bestTargetFramework == "unity" ||
-                        bestTargetFramework == "net35-unity full v3.5" ||
-                        bestTargetFramework == "net35-unity subset v3.5")
+                    // go through the library folders in descending order (highest to lowest version)
+                    IEnumerable<DirectoryInfo> libDirectories = Directory.GetDirectories(packageInstallDirectory + "/lib").Select(s => new DirectoryInfo(s));
+                    var targetFrameworks = libDirectories
+                        .Select(x => x.Name.ToLower());
+
+                    string bestTargetFramework = TryGetBestTargetFrameworkForCurrentSettings(targetFrameworks);
+                    if (bestTargetFramework != null)
                     {
-                        selectedDirectories.Add(Path.Combine(bestLibDirectory.Parent.FullName, "unity"));
-                        selectedDirectories.Add(Path.Combine(bestLibDirectory.Parent.FullName, "net35-unity full v3.5"));
-                        selectedDirectories.Add(Path.Combine(bestLibDirectory.Parent.FullName, "net35-unity subset v3.5"));
+                        DirectoryInfo bestLibDirectory = libDirectories
+                            .First(x => x.Name.ToLower() == bestTargetFramework);
+
+                        if (bestTargetFramework == "unity" ||
+                            bestTargetFramework == "net35-unity full v3.5" ||
+                            bestTargetFramework == "net35-unity subset v3.5")
+                        {
+                            selectedDirectories.Add(Path.Combine(bestLibDirectory.Parent.FullName, "unity"));
+                            selectedDirectories.Add(Path.Combine(bestLibDirectory.Parent.FullName, "net35-unity full v3.5"));
+                            selectedDirectories.Add(Path.Combine(bestLibDirectory.Parent.FullName, "net35-unity subset v3.5"));
+                        }
+                        else
+                        {
+                            selectedDirectories.Add(bestLibDirectory.FullName);
+                        }
                     }
-                    else
+
+                    foreach (string directory in selectedDirectories)
                     {
-                        selectedDirectories.Add(bestLibDirectory.FullName);
+                        LogVerbose("Using {0}", directory);
+                    }
+
+                    // delete all of the libaries except for the selected one
+                    foreach (DirectoryInfo directory in libDirectories)
+                    {
+                        bool validDirectory = selectedDirectories
+                            .Where(d => string.Compare(d, directory.FullName, ignoreCase: true) == 0)
+                            .Any();
+
+                        if (!validDirectory)
+                        {
+                            DeleteDirectory(directory.FullName);
+                        }
                     }
                 }
 
-                foreach (string directory in selectedDirectories)
+                if (Directory.Exists(packageInstallDirectory + "/tools"))
                 {
-                    LogVerbose("Using {0}", directory);
+                    // Move the tools folder outside of the Unity Assets folder
+                    string toolsInstallDirectory = Path.Combine(Application.dataPath, string.Format("../Packages/{0}.{1}/tools", package.Id, package.Version));
+
+                    LogVerbose("Moving {0} to {1}", packageInstallDirectory + "/tools", toolsInstallDirectory);
+
+                    // create the directory to create any of the missing folders in the path
+                    Directory.CreateDirectory(toolsInstallDirectory);
+
+                    // delete the final directory to prevent the Move operation from throwing exceptions.
+                    DeleteDirectory(toolsInstallDirectory);
+
+                    Directory.Move(packageInstallDirectory + "/tools", toolsInstallDirectory);
                 }
 
-                // delete all of the libaries except for the selected one
-                foreach (DirectoryInfo directory in libDirectories)
-                {
-                    bool validDirectory = selectedDirectories
-                        .Where(d => string.Compare(d, directory.FullName, ignoreCase: true) == 0)
-                        .Any();
+                // delete all PDB files since Unity uses Mono and requires MDB files, which causes it to output "missing MDB" errors
+                DeleteAllFiles(packageInstallDirectory, "*.pdb");
 
-                    if (!validDirectory)
+                // if there are native DLLs, copy them to the Unity project root (1 up from Assets)
+                if (Directory.Exists(packageInstallDirectory + "/output"))
+                {
+                    string[] files = Directory.GetFiles(packageInstallDirectory + "/output");
+                    foreach (string file in files)
                     {
-                        DeleteDirectory(directory.FullName);
-                    }
-                }
-            }
-
-            if (Directory.Exists(packageInstallDirectory + "/tools"))
-            {
-                // Move the tools folder outside of the Unity Assets folder
-                string toolsInstallDirectory = Path.Combine(Application.dataPath, string.Format("../Packages/{0}.{1}/tools", package.Id, package.Version));
-
-                LogVerbose("Moving {0} to {1}", packageInstallDirectory + "/tools", toolsInstallDirectory);
-
-                // create the directory to create any of the missing folders in the path
-                Directory.CreateDirectory(toolsInstallDirectory);
-
-                // delete the final directory to prevent the Move operation from throwing exceptions.
-                DeleteDirectory(toolsInstallDirectory);
-
-                Directory.Move(packageInstallDirectory + "/tools", toolsInstallDirectory);
-            }
-
-            // delete all PDB files since Unity uses Mono and requires MDB files, which causes it to output "missing MDB" errors
-            DeleteAllFiles(packageInstallDirectory, "*.pdb");
-
-            // if there are native DLLs, copy them to the Unity project root (1 up from Assets)
-            if (Directory.Exists(packageInstallDirectory + "/output"))
-            {
-                string[] files = Directory.GetFiles(packageInstallDirectory + "/output");
-                foreach (string file in files)
-                {
-                    string newFilePath = Directory.GetCurrentDirectory() + "/" + Path.GetFileName(file);
-                    LogVerbose("Moving {0} to {1}", file, newFilePath);
-                    DeleteFile(newFilePath);
-                    File.Move(file, newFilePath);
-                }
-
-                LogVerbose("Deleting {0}", packageInstallDirectory + "/output");
-
-                DeleteDirectory(packageInstallDirectory + "/output");
-            }
-
-            // if there are Unity plugin DLLs, copy them to the Unity Plugins folder (Assets/Plugins)
-            if (Directory.Exists(packageInstallDirectory + "/unityplugin"))
-            {
-                string pluginsDirectory = Application.dataPath + "/Plugins/";
-
-                DirectoryCopy(packageInstallDirectory + "/unityplugin", pluginsDirectory);
-
-                LogVerbose("Deleting {0}", packageInstallDirectory + "/unityplugin");
-
-                DeleteDirectory(packageInstallDirectory + "/unityplugin");
-            }
-
-            // if there are Unity StreamingAssets, copy them to the Unity StreamingAssets folder (Assets/StreamingAssets)
-            if (Directory.Exists(packageInstallDirectory + "/StreamingAssets"))
-            {
-                string streamingAssetsDirectory = Application.dataPath + "/StreamingAssets/";
-
-                if (!Directory.Exists(streamingAssetsDirectory))
-                {
-                    Directory.CreateDirectory(streamingAssetsDirectory);
-                }
-
-                // move the files
-                string[] files = Directory.GetFiles(packageInstallDirectory + "/StreamingAssets");
-                foreach (string file in files)
-                {
-                    string newFilePath = streamingAssetsDirectory + Path.GetFileName(file);
-
-                    try
-                    {
+                        string newFilePath = Directory.GetCurrentDirectory() + "/" + Path.GetFileName(file);
                         LogVerbose("Moving {0} to {1}", file, newFilePath);
                         DeleteFile(newFilePath);
                         File.Move(file, newFilePath);
                     }
-                    catch (Exception e)
-                    {
-                        Debug.LogWarningFormat("{0} couldn't be moved. \n{1}", newFilePath, e.ToString());
-                    }
+
+                    LogVerbose("Deleting {0}", packageInstallDirectory + "/output");
+
+                    DeleteDirectory(packageInstallDirectory + "/output");
                 }
 
-                // move the directories
-                string[] directories = Directory.GetDirectories(packageInstallDirectory + "/StreamingAssets");
-                foreach (string directory in directories)
+                // if there are Unity plugin DLLs, copy them to the Unity Plugins folder (Assets/Plugins)
+                if (Directory.Exists(packageInstallDirectory + "/unityplugin"))
                 {
-                    string newDirectoryPath = streamingAssetsDirectory + new DirectoryInfo(directory).Name;
+                    string pluginsDirectory = Application.dataPath + "/Plugins/";
 
-                    try
-                    {
-                        LogVerbose("Moving {0} to {1}", directory, newDirectoryPath);
-                        if (Directory.Exists(newDirectoryPath))
-                        {
-                            DeleteDirectory(newDirectoryPath);
-                        }
-                        Directory.Move(directory, newDirectoryPath);
-                    }
-                    catch (Exception e)
-                    {
-                        Debug.LogWarningFormat("{0} couldn't be moved. \n{1}", newDirectoryPath, e.ToString());
-                    }
+                    DirectoryCopy(packageInstallDirectory + "/unityplugin", pluginsDirectory);
+
+                    LogVerbose("Deleting {0}", packageInstallDirectory + "/unityplugin");
+
+                    DeleteDirectory(packageInstallDirectory + "/unityplugin");
                 }
 
-                // delete the package's StreamingAssets folder and .meta file
-                LogVerbose("Deleting {0}", packageInstallDirectory + "/StreamingAssets");
-                DeleteDirectory(packageInstallDirectory + "/StreamingAssets");
-                DeleteFile(packageInstallDirectory + "/StreamingAssets.meta");
+                // if there are Unity StreamingAssets, copy them to the Unity StreamingAssets folder (Assets/StreamingAssets)
+                if (Directory.Exists(packageInstallDirectory + "/StreamingAssets"))
+                {
+                    string streamingAssetsDirectory = Application.dataPath + "/StreamingAssets/";
+
+                    if (!Directory.Exists(streamingAssetsDirectory))
+                    {
+                        Directory.CreateDirectory(streamingAssetsDirectory);
+                    }
+
+                    // move the files
+                    string[] files = Directory.GetFiles(packageInstallDirectory + "/StreamingAssets");
+                    foreach (string file in files)
+                    {
+                        string newFilePath = streamingAssetsDirectory + Path.GetFileName(file);
+
+                        try
+                        {
+                            LogVerbose("Moving {0} to {1}", file, newFilePath);
+                            DeleteFile(newFilePath);
+                            File.Move(file, newFilePath);
+                        }
+                        catch (Exception e)
+                        {
+                            Debug.LogWarningFormat("{0} couldn't be moved. \n{1}", newFilePath, e.ToString());
+                        }
+                    }
+
+                    // move the directories
+                    string[] directories = Directory.GetDirectories(packageInstallDirectory + "/StreamingAssets");
+                    foreach (string directory in directories)
+                    {
+                        string newDirectoryPath = streamingAssetsDirectory + new DirectoryInfo(directory).Name;
+
+                        try
+                        {
+                            LogVerbose("Moving {0} to {1}", directory, newDirectoryPath);
+                            if (Directory.Exists(newDirectoryPath))
+                            {
+                                DeleteDirectory(newDirectoryPath);
+                            }
+                            Directory.Move(directory, newDirectoryPath);
+                        }
+                        catch (Exception e)
+                        {
+                            Debug.LogWarningFormat("{0} couldn't be moved. \n{1}", newDirectoryPath, e.ToString());
+                        }
+                    }
+
+                    // delete the package's StreamingAssets folder and .meta file
+                    LogVerbose("Deleting {0}", packageInstallDirectory + "/StreamingAssets");
+                    DeleteDirectory(packageInstallDirectory + "/StreamingAssets");
+                    DeleteFile(packageInstallDirectory + "/StreamingAssets.meta");
+                }
             }
         }
 
@@ -784,26 +787,37 @@
                 return;
             }
 
-            DirectoryInfo directoryInfo = new DirectoryInfo(directoryPath);
-
-            // delete any sub-folders first
-            foreach (FileSystemInfo childInfo in directoryInfo.GetFileSystemInfos())
+            // handle long paths
+            var p = Process.Start(new ProcessStartInfo
             {
-                DeleteDirectory(childInfo.FullName);
-            }
+                FileName = "cmd",
+                Arguments = $"/c rmdir /s/q \"{directoryPath}\"",
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                WindowStyle = ProcessWindowStyle.Hidden
+            });
+            p.WaitForExit();
 
-            // remove the read-only flag on all files
-            FileInfo[] files = directoryInfo.GetFiles();
-            foreach (FileInfo file in files)
-            {
-                file.Attributes = FileAttributes.Normal;
-            }
-
-            // remove the read-only flag on the directory
-            directoryInfo.Attributes = FileAttributes.Normal;
-
-            // recursively delete the directory
-            directoryInfo.Delete(true);
+            //DirectoryInfo directoryInfo = new DirectoryInfo(directoryPath);
+            //
+            //// delete any sub-folders first
+            //foreach (FileSystemInfo childInfo in directoryInfo.GetFileSystemInfos())
+            //{
+            //    DeleteDirectory(childInfo.FullName);
+            //}
+            //
+            //// remove the read-only flag on all files
+            //FileInfo[] files = directoryInfo.GetFiles();
+            //foreach (FileInfo file in files)
+            //{
+            //    file.Attributes = FileAttributes.Normal;
+            //}
+            //
+            //// remove the read-only flag on the directory
+            //directoryInfo.Attributes = FileAttributes.Normal;
+            //
+            //// recursively delete the directory
+            //directoryInfo.Delete(true);
         }
 
         /// <summary>
@@ -857,20 +871,23 @@
             PackagesConfigFile.RemovePackage(package);
             PackagesConfigFile.Save(PackagesConfigFilePath);
 
-            string packageInstallDirectory = Path.Combine(NugetConfigFile.RepositoryPath, string.Format("{0}.{1}", package.Id, package.Version));
-            DeleteDirectory(packageInstallDirectory);
-
-            string metaFile = Path.Combine(NugetConfigFile.RepositoryPath, string.Format("{0}.{1}.meta", package.Id, package.Version));
-            DeleteFile(metaFile);
-
-            string toolsInstallDirectory = Path.Combine(Application.dataPath, string.Format("../Packages/{0}.{1}", package.Id, package.Version));
-            DeleteDirectory(toolsInstallDirectory);
-
-            installedPackages.Remove(package.Id);
-
-            if (refreshAssets)
+            using (var subst = new Subst(NugetConfigFile.RepositoryPath))
             {
-                AssetDatabase.Refresh();
+                string packageInstallDirectory = Path.Combine(subst.MappedRoot, string.Format("{0}.{1}", package.Id, package.Version));
+                DeleteDirectory(packageInstallDirectory);
+
+                string metaFile = Path.Combine(subst.MappedRoot, string.Format("{0}.{1}.meta", package.Id, package.Version));
+                DeleteFile(metaFile);
+
+                string toolsInstallDirectory = Path.Combine(Application.dataPath, string.Format("../Packages/{0}.{1}", package.Id, package.Version));
+                DeleteDirectory(toolsInstallDirectory);
+
+                installedPackages.Remove(package.Id);
+
+                if (refreshAssets)
+                {
+                    AssetDatabase.Refresh();
+                }
             }
         }
 
@@ -940,33 +957,37 @@
             // loops through the packages that are actually installed in the project
             if (Directory.Exists(NugetConfigFile.RepositoryPath))
             {
-                // a package that was installed via NuGet will have the .nupkg it came from inside the folder
-                string[] nupkgFiles = Directory.GetFiles(NugetConfigFile.RepositoryPath, "*.nupkg", SearchOption.AllDirectories);
-                foreach (string nupkgFile in nupkgFiles)
+                using (var subst = new Subst(NugetConfigFile.RepositoryPath))
                 {
-                    NugetPackage package = NugetPackage.FromNupkgFile(nupkgFile);
-                    if (!installedPackages.ContainsKey(package.Id))
+                    // a package that was installed via NuGet will have the .nupkg it came from inside the folder
+                    string[] nupkgFiles = Directory.GetFiles(subst.MappedRoot, "*.nupkg", SearchOption.AllDirectories);
+                    foreach (string nupkgFile in nupkgFiles)
                     {
-                        installedPackages.Add(package.Id, package);
+                        NugetPackage package = NugetPackage.FromNupkgFile(nupkgFile);
+                        if (!installedPackages.ContainsKey(package.Id))
+                        {
+                            installedPackages.Add(package.Id, package);
+                        }
+                        else
+                        {
+                            Debug.LogErrorFormat("Package is already in installed list: {0}", package.Id);
+                        }
                     }
-                    else
-                    {
-                        Debug.LogErrorFormat("Package is already in installed list: {0}", package.Id);
-                    }
-                }
 
-                // if the source code & assets for a package are pulled directly into the project (ex: via a symlink/junction) it should have a .nuspec defining the package
-                string[] nuspecFiles = Directory.GetFiles(NugetConfigFile.RepositoryPath, "*.nuspec", SearchOption.AllDirectories);
-                foreach (string nuspecFile in nuspecFiles)
-                {
-                    NugetPackage package = NugetPackage.FromNuspec(NuspecFile.Load(nuspecFile));
-                    if (!installedPackages.ContainsKey(package.Id))
+                    // if the source code & assets for a package are pulled directly into the project (ex: via a symlink/junction) it should have a .nuspec defining the package
+                    string[] nuspecFiles = Directory.GetFiles(subst.MappedRoot, "*.nuspec", SearchOption.AllDirectories);
+
+                    foreach (string nuspecFile in nuspecFiles)
                     {
-                        installedPackages.Add(package.Id, package);
-                    }
-                    else
-                    {
-                        Debug.LogErrorFormat("Package is already in installed list: {0}", package.Id);
+                        NugetPackage package = NugetPackage.FromNuspec(NuspecFile.Load(nuspecFile));
+                        if (!installedPackages.ContainsKey(package.Id))
+                        {
+                            installedPackages.Add(package.Id, package);
+                        }
+                        else
+                        {
+                            Debug.LogErrorFormat("Package is already in installed list: {0}", package.Id);
+                        }
                     }
                 }
             }
@@ -1320,30 +1341,33 @@
                     EditorUtility.DisplayProgressBar(string.Format("Installing {0} {1}", package.Id, package.Version), "Extracting Package", 0.6f);
                 }
 
-                if (File.Exists(cachedPackagePath))
+                using (var subst = new Subst(NugetConfigFile.RepositoryPath))
                 {
-                    string baseDirectory = Path.Combine(NugetConfigFile.RepositoryPath, string.Format("{0}.{1}", package.Id, package.Version));
-
-                    // unzip the package
-                    using (ZipFile zip = ZipFile.Read(cachedPackagePath))
+                    if (File.Exists(cachedPackagePath))
                     {
-                        foreach (ZipEntry entry in zip)
+                        // unzip the package
+                        string baseDirectory = Path.Combine(subst.MappedRoot, string.Format("{0}.{1}", package.Id, package.Version));
+
+                        using (ZipFile zip = ZipFile.Read(cachedPackagePath))
                         {
-                            entry.Extract(baseDirectory, ExtractExistingFileAction.OverwriteSilently);
-                            if (NugetConfigFile.ReadOnlyPackageFiles)
+                            foreach (ZipEntry entry in zip)
                             {
-                                FileInfo extractedFile = new FileInfo(Path.Combine(baseDirectory, entry.FileName));
-                                extractedFile.Attributes |= FileAttributes.ReadOnly;
+                                entry.Extract(baseDirectory, ExtractExistingFileAction.OverwriteSilently);
+                                if (NugetConfigFile.ReadOnlyPackageFiles)
+                                {
+                                    FileInfo extractedFile = new FileInfo(Path.Combine(baseDirectory, entry.FileName));
+                                    extractedFile.Attributes |= FileAttributes.ReadOnly;
+                                }
                             }
                         }
-                    }
 
-                    // copy the .nupkg inside the Unity project
-                    File.Copy(cachedPackagePath, Path.Combine(NugetConfigFile.RepositoryPath, string.Format("{0}.{1}/{0}.{1}.nupkg", package.Id, package.Version)), true);
-                }
-                else
-                {
-                    Debug.LogErrorFormat("File not found: {0}", cachedPackagePath);
+                        // copy the .nupkg inside the Unity project
+                        File.Copy(cachedPackagePath, Path.Combine(subst.MappedRoot, string.Format("{0}.{1}/{0}.{1}.nupkg", package.Id, package.Version)), true);
+                    }
+                    else
+                    {
+                        Debug.LogErrorFormat("File not found: {0}", cachedPackagePath);
+                    }
                 }
 
                 if (refreshAssets)
@@ -1552,29 +1576,31 @@
                 return;
             }
 
-            string[] directories = Directory.GetDirectories(NugetConfigFile.RepositoryPath, "*", SearchOption.TopDirectoryOnly);
-            foreach (string folder in directories)
+            using (var subst = new Subst(NugetConfigFile.RepositoryPath))
             {
-                string name = Path.GetFileName(folder);
-                bool installed = false;
-                foreach (NugetPackageIdentifier package in PackagesConfigFile.Packages)
+                string[] directories = Directory.GetDirectories(subst.MappedRoot, "*", SearchOption.TopDirectoryOnly);
+                foreach (string folder in directories)
                 {
-                    string packageName = string.Format("{0}.{1}", package.Id, package.Version);
-                    if (name == packageName)
+                    string name = Path.GetFileName(folder);
+                    bool installed = false;
+                    foreach (NugetPackageIdentifier package in PackagesConfigFile.Packages)
                     {
-                        installed = true;
-                        break;
+                        string packageName = string.Format("{0}.{1}", package.Id, package.Version);
+                        if (name == packageName)
+                        {
+                            installed = true;
+                            break;
+                        }
+                    }
+                    if (!installed)
+                    {
+                        LogVerbose("---DELETE unnecessary package {0}", name);
+
+                        DeleteDirectory(folder);
+                        DeleteFile(folder + ".meta");
                     }
                 }
-                if (!installed)
-                {
-                    LogVerbose("---DELETE unnecessary package {0}", name);
-
-                    DeleteDirectory(folder);
-                    DeleteFile(folder + ".meta");
-                }
             }
-
         }
 
         /// <summary>

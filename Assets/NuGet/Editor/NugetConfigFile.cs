@@ -282,6 +282,12 @@
                             string repositoryPath = Path.Combine(UnityEngine.Application.dataPath, configFile.RepositoryPath);
                             repositoryPath = Path.GetFullPath(repositoryPath);
 
+                            // prepend long path prefix
+                            if (!repositoryPath.StartsWith(@"\\?\"))
+                            {
+                                repositoryPath = @"\\?\" + repositoryPath;
+                            }
+
                             configFile.RepositoryPath = repositoryPath;
                         }
                     }

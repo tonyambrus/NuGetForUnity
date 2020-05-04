@@ -94,6 +94,9 @@
     <Compile Include="..\Assets\NuGet\Editor\RepositoryType.cs">
       <Link>RepositoryType.cs</Link>
     </Compile>
+    <Compile Include="..\Assets\NuGet\Editor\Subst.cs">
+      <Link>Subst.cs</Link>
+    </Compile>
     <Compile Include="Properties\AssemblyInfo.cs" />
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
