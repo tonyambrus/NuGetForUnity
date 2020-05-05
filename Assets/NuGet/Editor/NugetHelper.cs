@@ -798,6 +798,11 @@
             });
             p.WaitForExit();
 
+            if (Directory.Exists(directoryPath))
+            {
+                throw new Exception($"Failed to remove directory {directoryPath}");
+            }
+
             //DirectoryInfo directoryInfo = new DirectoryInfo(directoryPath);
             //
             //// delete any sub-folders first

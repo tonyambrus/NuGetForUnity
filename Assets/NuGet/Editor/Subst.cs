@@ -20,12 +20,20 @@ namespace NugetForUnity
                 path = path.TrimEnd('\\');
             }
 
+            if (!Directory.Exists(path))
+            {
+                Directory.CreateDirectory(path);
+            }
+
             if (count == 0)
             {
                 this.path = path;
                 basePath = path;
 
-                Execute($"{letter}: \"{path}\"");
+                if (Execute($"{letter}: \"{path}\"") != 0)
+                {
+                    throw new Exception("Failed to subst");
+                }
             }
             else if (path.IndexOf(basePath, StringComparison.OrdinalIgnoreCase) != 0)
             {
