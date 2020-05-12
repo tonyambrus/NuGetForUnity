@@ -65,7 +65,23 @@
             {
                 if (packagesConfigFile == null)
                 {
+                    var projectdir = Path.GetFullPath(Path.Combine(Application.dataPath, "../"));
+
+                    var dirs = new string[]
+                    {
+                        Path.Combine(projectdir, "Packages"),
+                        Path.Combine(projectdir, "Library/PackageCache")
+                    };
+
+                    // handle packages.config's in UPM directories
+                    var packages = dirs
+                        .Where(p => Directory.Exists(p))
+                        .SelectMany(p => Directory.GetFiles(p, "packages.config", SearchOption.AllDirectories))
+                        .Select(p => PackagesConfigFile.Load(p))
+                        .ToList();
+
                     packagesConfigFile = PackagesConfigFile.Load(PackagesConfigFilePath);
+                    packagesConfigFile.Merge(packages);
                 }
 
                 return packagesConfigFile;
@@ -782,47 +798,26 @@
         /// <param name="directoryPath">The path of the folder to delete.</param>
         private static void DeleteDirectory(string directoryPath)
         {
-            if (!Directory.Exists(directoryPath))
+            DirectoryInfo directoryInfo = new DirectoryInfo(directoryPath);
+
+            // delete any sub-folders first
+            foreach (FileSystemInfo childInfo in directoryInfo.GetFileSystemInfos())
             {
-                return;
+                DeleteDirectory(childInfo.FullName);
             }
 
-            // handle long paths
-            var p = Process.Start(new ProcessStartInfo
+            // remove the read-only flag on all files
+            FileInfo[] files = directoryInfo.GetFiles();
+            foreach (FileInfo file in files)
             {
-                FileName = "cmd",
-                Arguments = $"/c rmdir /s/q \"{directoryPath}\"",
-                UseShellExecute = false,
-                CreateNoWindow = true,
-                WindowStyle = ProcessWindowStyle.Hidden
-            });
-            p.WaitForExit();
-
-            if (Directory.Exists(directoryPath))
-            {
-                throw new Exception($"Failed to remove directory {directoryPath}");
+                file.Attributes = FileAttributes.Normal;
             }
 
-            //DirectoryInfo directoryInfo = new DirectoryInfo(directoryPath);
-            //
-            //// delete any sub-folders first
-            //foreach (FileSystemInfo childInfo in directoryInfo.GetFileSystemInfos())
-            //{
-            //    DeleteDirectory(childInfo.FullName);
-            //}
-            //
-            //// remove the read-only flag on all files
-            //FileInfo[] files = directoryInfo.GetFiles();
-            //foreach (FileInfo file in files)
-            //{
-            //    file.Attributes = FileAttributes.Normal;
-            //}
-            //
-            //// remove the read-only flag on the directory
-            //directoryInfo.Attributes = FileAttributes.Normal;
-            //
-            //// recursively delete the directory
-            //directoryInfo.Delete(true);
+            // remove the read-only flag on the directory
+            directoryInfo.Attributes = FileAttributes.Normal;
+
+            // recursively delete the directory
+            directoryInfo.Delete(true);
         }
 
         /// <summary>

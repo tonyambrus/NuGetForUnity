@@ -2,6 +2,7 @@
 {
     using System.Collections.Generic;
     using System.IO;
+    using System.Linq;
     using System.Xml.Linq;
     using UnityEditor;
     using UnityEngine;
@@ -49,6 +50,22 @@
         public void RemovePackage(NugetPackageIdentifier package)
         {
             Packages.Remove(package);
+        }
+
+        /// <summary>
+        /// Removes a package from the packages.config file.
+        /// </summary>
+        /// <param name="package">The NugetPackage to remove from the packages.config file.</param>
+        public void Merge(IEnumerable<PackagesConfigFile> configs)
+        {
+            var packages = configs
+                .SelectMany(c => c.Packages)
+                .Distinct();
+
+            foreach (var pkg in packages)
+            {
+                AddPackage(pkg);
+            }
         }
 
         /// <summary>
