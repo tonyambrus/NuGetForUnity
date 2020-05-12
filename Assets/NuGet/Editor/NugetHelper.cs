@@ -55,6 +55,7 @@
         /// Backing field for the packages.config file.
         /// </summary>
         private static PackagesConfigFile packagesConfigFile;
+        private static DateTime packagesConfigFileModifiedTime = DateTime.MinValue;
 
         /// <summary>
         /// Gets the loaded packages.config file that hold the dependencies for the project.
@@ -63,6 +64,14 @@
         {
             get
             {
+                if (packagesConfigFile != null)
+                {
+                    if (!File.Exists(PackagesConfigFilePath) || File.GetLastWriteTime(PackagesConfigFilePath) > packagesConfigFileModifiedTime)
+                    {
+                        packagesConfigFile = null;
+                    }
+                }
+
                 if (packagesConfigFile == null)
                 {
                     var projectdir = Path.GetFullPath(Path.Combine(Application.dataPath, "../"));
@@ -82,6 +91,8 @@
 
                     packagesConfigFile = PackagesConfigFile.Load(PackagesConfigFilePath);
                     packagesConfigFile.Merge(packages);
+
+                    packagesConfigFileModifiedTime = File.GetLastWriteTime(PackagesConfigFilePath);
                 }
 
                 return packagesConfigFile;
@@ -334,6 +345,13 @@
             }
 
             filePath = Path.GetFullPath(filePath);
+            var assetsDir = Path.GetFullPath(Application.dataPath);
+
+            // ignore outside of assets directory, since they're not mutable
+            if (!filePath.StartsWith(assetsDir, StringComparison.OrdinalIgnoreCase))
+            {
+                return;
+            }
 
             string assetsLocalPath = filePath.Replace(Path.GetFullPath(Application.dataPath), "Assets");
             PluginImporter importer = AssetImporter.GetAtPath(assetsLocalPath) as PluginImporter;
